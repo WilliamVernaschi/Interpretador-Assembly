@@ -4,12 +4,6 @@
 #include <map>
 #include <sstream>
 
-#ifdef ONLINE_JUDGE
-  #define debug(x...)
-#else
-  #include "/mnt/d/dev/cp/debug.h"
-#endif
-
 using namespace std;
 
 enum InstructionType{ ARITMETICA, DESVIO, MEMORIA, MOVIMENTACAO};
@@ -26,9 +20,15 @@ struct Instruction{
 
 class Parser{
 private:
+
+  // recebe uma string que representa um registro do tipo "rxx"
+  // e retorna apenas o número "xx"
   static int getRegisterId(const string &reg){
     return stoi(reg.substr(1, reg.size()-1));
   }
+
+  
+  // recebe um vetor que foram recebidos da entrada e retrona uma instrução.
   static Instruction parseInstruction(const vector<string> &values){
     Instruction instruction;
 
@@ -141,12 +141,24 @@ private:
 
     return instruction;
   }
-public:
-  static vector<Instruction> parseInstructions(){
-    vector<Instruction> instructions;
+
+  // lê as linhas da entrada padrão e retorna um vetor de valores 
+  // separados por espaço e vírgula.
+  //
+  // por exemplo, para a entrada
+  //
+  // mov r01,r05
+  // addi r01,r05,9
+  //
+  // a saída seria
+  //
+  // {{"mov", "r01", "r05"},
+  //  {"addi", "r01", "r05", "9"}}
+  static vector<vector<String>> getInputValues(){
+
     string line;
+    vector<vector<string>> values;
     while(getline(cin, line)){
-      debug(line);
 
 
       istringstream iss(line);
@@ -158,21 +170,34 @@ public:
         no_commas += token + ' ';
       }
 
-      vector<string> values;
+      vector<string> value;
+
 
       // retira os espacos da linha de input
       iss = std::istringstream(no_commas);
       while(std::getline(iss, token, ' ')){
-        values.push_back(token);
+        value.push_back(token);
       }
 
-      debug(values);
-
-      instructions.push_back(parseInstruction(values));
-
+      values.push_back(value);
     }
-    return instructions;
+
+    return values;
   }
+public:
+  // recebe os valores da entrada e retorna um vetor de instruções 
+  // correspondentes.
+  static vector<Instruction> parseInstructions(){
+    vector<Instruction> instructions;
+
+    vector<string> inputValues = getInputValues();
+
+    for(const string &values: inputValues){
+      instructions.push_back(parseInstruction(values));
+    }
+
+    
+    return instructions;
 };
 
 class Interpreter{
@@ -189,6 +214,7 @@ public:
     r.assign(32, 0);
     data_memory.assign(2048, 0);
 
+    // atribui uma função para cada nome de instrução.
     instruction_func[ADD] = [this](const Instruction& instruction){ add(instruction); };
     instruction_func[ADDI] = [this](const Instruction& instruction){ addi(instruction); };
     instruction_func[SUB] = [this](const Instruction& instruction){ sub(instruction); };
@@ -310,7 +336,6 @@ int main(){
   Interpreter i;
 
   i.setInstructions(Parser::parseInstructions());
-  vector<Instruction> x = i.getInstructions();
 
   while(i.executeNextCycle()){
     i.printMemory();
