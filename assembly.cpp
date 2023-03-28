@@ -185,26 +185,43 @@ private:
     vector<vector<string>> values;
     while(getline(cin, line)){
 
+      // "," no final deixa mais fácil de parsear
+      line+=",";
 
-      istringstream iss(line);
-      string token;
-      string no_commas;
-
-      // retira as vírgulas da linha de input
-      while (std::getline(iss, token, ',')) {
-        no_commas += token + ' ';
-      }
 
       vector<string> value;
 
+      int i = 0;
+      string instruction_name;
+      while(line[i] != ' '){
+        instruction_name+=line[i];
+        i++;
+      }
+      i++;
+      value.push_back(instruction_name);
 
-      // retira os espacos da linha de input
-      iss = std::istringstream(no_commas);
-      while(std::getline(iss, token, ' ')){
+      while(i < line.size()){
+        string token;
+        while(line[i] != ','){
+
+          if(line[i] != ' ')
+            token += line[i];
+
+          i++;
+        }
+        i++;
         value.push_back(token);
       }
 
-      value.push_back(line);
+      string formatted_line = value[0];
+      formatted_line += ' ';
+      for(int i = 1; i < value.size(); i++){
+        formatted_line += value[i];
+        if(i != value.size()-1)
+          formatted_line += ',';
+      }
+
+      value.push_back(formatted_line);
 
       values.push_back(value);
     }
@@ -215,7 +232,7 @@ private:
 public:
   // recebe os valores da entrada e retorna um vetor de instruções 
   // correspondentes.
-  static vector<Instruction> parseInstructions(){
+  static vector<Instruction> readAndParseInstructions(){
     vector<Instruction> instructions;
 
     vector<vector<string>> inputValues = getInputValues();
@@ -229,6 +246,13 @@ public:
 
     
     return instructions;
+  }
+
+  static void printInstructions(vector<Instruction> instructions){
+    for(int i = 0; i < instructions.size(); i++){
+      cout << i << " " << instructions[i].raw << '\n';
+    }
+    cout << endl;
   }
 };
 
@@ -305,6 +329,7 @@ public:
     int prevPC = PC;
     bool executed = executeInstruction();
 
+
     if(executed){
       lastExecutedInstruction = instruction_memory[prevPC].raw;
       return true;
@@ -320,9 +345,11 @@ private:
 
     InstructionName instruction_name = instruction_memory[PC].name;
 
+    int isNotDesvio = instruction_memory[PC].type == DESVIO ? 0 : 1;
+
     instruction_func[instruction_name](instruction_memory[PC]);
 
-    if(instruction_memory[PC].type != DESVIO) PC++;
+    PC += isNotDesvio;
 
     return true;
   }
@@ -386,7 +413,10 @@ private:
 int main(){
   Interpreter i;
 
-  i.setInstructions(Parser::parseInstructions());
+  vector<Instruction> instructions = Parser::readAndParseInstructions();
+  Parser::printInstructions(instructions);
+
+  i.setInstructions(instructions);
 
   while(i.executeNextCycle()){
     cout << "INSTRUÇÃO EXECUTADA: " << i.lastExecutedInstruction << endl;
@@ -401,4 +431,3 @@ int main(){
   }
 
 }
-
