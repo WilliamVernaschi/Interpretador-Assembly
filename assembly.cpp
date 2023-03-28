@@ -16,15 +16,38 @@ struct Instruction{
   InstructionName name;
   int vimm, rd, rs, rt;
   InstructionType type;
+  string raw;
 };
 
 class Parser{
 private:
 
   // recebe uma string que representa um registro do tipo "rxx"
-  // e retorna apenas o número "xx"
+  // e retorna apenas o número "xx" (seu "identificador")
   static int getRegisterId(const string &reg){
     return stoi(reg.substr(1, reg.size()-1));
+  }
+
+  // recebe uma string da forma "xx(ryy)", onde xx e yy são número inteiros
+  // e retorna um par da forma {xx, "ryy"}, que representam os parâmetros
+  // utilizados em uma função de memória (sw ou lw)
+  static pair<int, string> getMemoryParameters(const string &str){
+    string xxStr;
+    string ryy;
+    int i = 0;
+    while(str[i] != '('){
+      xxStr += str[i];
+      i++;
+    }
+    i++;
+    while(str[i] != ')'){
+      ryy += str[i];
+      i++;
+    }
+
+    int xx = stoi(xxStr);
+
+    return {xx, ryy};
   }
 
   
@@ -114,15 +137,17 @@ private:
     }
     else if(name == "lw"){
       instruction.rd = getRegisterId(values[1]);
-      instruction.vimm = stoi(values[2]);
-      instruction.rs = getRegisterId(values[3]);
+      pair<int, string> memoryParameters = getMemoryParameters(values[2]);
+      instruction.vimm = memoryParameters.first;
+      instruction.rs = getRegisterId(memoryParameters.second);
       instruction.type = MEMORIA;
       instruction.name = LW;
     }
     else if(name == "sw"){
-      instruction.rd = getRegisterId(values[1]);
-      instruction.vimm = stoi(values[2]);
-      instruction.rs = getRegisterId(values[3]);
+      instruction.rs = getRegisterId(values[1]);
+      pair<int, string> memoryParameters = getMemoryParameters(values[2]);
+      instruction.vimm = memoryParameters.first;
+      instruction.rt = getRegisterId(memoryParameters.second);
       instruction.type = MEMORIA;
       instruction.name = SW;
     }
@@ -154,7 +179,7 @@ private:
   //
   // {{"mov", "r01", "r05"},
   //  {"addi", "r01", "r05", "9"}}
-  static vector<vector<String>> getInputValues(){
+  static vector<vector<string>> getInputValues(){
 
     string line;
     vector<vector<string>> values;
@@ -179,8 +204,11 @@ private:
         value.push_back(token);
       }
 
+      value.push_back(line);
+
       values.push_back(value);
     }
+
 
     return values;
   }
@@ -190,14 +218,18 @@ public:
   static vector<Instruction> parseInstructions(){
     vector<Instruction> instructions;
 
-    vector<string> inputValues = getInputValues();
+    vector<vector<string>> inputValues = getInputValues();
 
-    for(const string &values: inputValues){
-      instructions.push_back(parseInstruction(values));
+    for(const vector<string> &values: inputValues){
+      Instruction instruction = parseInstruction(values);
+      instruction.raw = values[values.size()-1];
+
+      instructions.push_back(instruction);
     }
 
     
     return instructions;
+  }
 };
 
 class Interpreter{
@@ -205,14 +237,24 @@ private:
 
   vector<int> r;
   vector<int> data_memory;
+
+  vector<bool> data_memory_touched;
+  vector<bool> r_touched;
+
   vector<Instruction> instruction_memory;
   map<InstructionName, function<void(const Instruction)>> instruction_func;
   int PC=0, RA=0, SP=0;
+  const int numRegisters = 32;
+  const int memorySize = 2048;
 
 public:
+  string lastExecutedInstruction;
+
   Interpreter(){
-    r.assign(32, 0);
-    data_memory.assign(2048, 0);
+    r.assign(numRegisters, 0);
+    r_touched.assign(numRegisters, false);
+    data_memory.assign(memorySize, 0);
+    data_memory_touched.assign(memorySize, false);
 
     // atribui uma função para cada nome de instrução.
     instruction_func[ADD] = [this](const Instruction& instruction){ add(instruction); };
@@ -243,7 +285,8 @@ public:
 
   void printMemory(){
     for(int i = 0; i < data_memory.size(); i++){
-      clog << "data_memory[" << i << "] = " << data_memory[i] << endl;
+      if(data_memory_touched[i] != 0)
+        clog << "data_memory[" << i << "] = " << data_memory[i] << endl;
     }
     
   }
@@ -251,15 +294,23 @@ public:
   void printRegisters(){
     clog << "PC = " << PC << endl;
     for(int i = 0; i < r.size(); i++){
-      clog << "r[" << i << "] = " << r[i] << endl;
+      if(r_touched[i])
+        clog << "r[" << i << "] = " << r[i] << endl;
     }
   }
 
   bool executeNextCycle(){
 
+
+    int prevPC = PC;
     bool executed = executeInstruction();
 
-    return executed == true;
+    if(executed){
+      lastExecutedInstruction = instruction_memory[prevPC].raw;
+      return true;
+    }
+    return false;
+
   }
 
 private:
@@ -277,17 +328,17 @@ private:
   }
 
   // ARITMÉTICAS
-  void add(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] + r[instruction.rt]; }
+  void add(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] + r[instruction.rt], r_touched[instruction.rd] = true; }
 
-  void addi(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] + instruction.vimm; }
+  void addi(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] + instruction.vimm, r_touched[instruction.rd] = true; }
 
-  void sub(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] - r[instruction.rt]; }
+  void sub(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] - r[instruction.rt], r_touched[instruction.rd] = true; }
 
-  void subi(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] - instruction.vimm; }
+  void subi(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] - instruction.vimm, r_touched[instruction.rd] = true; }
 
-  void mul(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] * r[instruction.rt]; }
+  void mul(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] * r[instruction.rt], r_touched[instruction.rd] = true; }
 
-  void div(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] / r[instruction.rt]; }
+  void div(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs] / r[instruction.rt], r_touched[instruction.rd] = true; }
 
   // DESVIOS
   void blt(const Instruction &instruction) {
@@ -321,14 +372,14 @@ private:
   void jal(const Instruction &instruction) { RA = PC+1, PC = instruction.vimm; }
 
   // MEMÓRIA
-  void lw(const Instruction &instruction) { r[instruction.rd] = data_memory[instruction.vimm + r[instruction.rs]]; }
+  void lw(const Instruction &instruction) { r[instruction.rd] = data_memory[instruction.vimm + r[instruction.rs]], r_touched[instruction.rd] = true ; }
 
-  void sw(const Instruction &instruction) { data_memory[instruction.vimm + r[instruction.rt]] = r[instruction.rs]; }
+  void sw(const Instruction &instruction) { data_memory[instruction.vimm + r[instruction.rt]] = r[instruction.rs], data_memory_touched[instruction.vimm + r[instruction.rt]] = true; }
 
   // MOVIMENTAÇÃO
-  void mov(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs]; }
+  void mov(const Instruction &instruction) { r[instruction.rd] = r[instruction.rs], r_touched[instruction.rd] = true; }
 
-  void movi(const Instruction &instruction) { r[instruction.rd] = instruction.vimm; }
+  void movi(const Instruction &instruction) { r[instruction.rd] = instruction.vimm, r_touched[instruction.rd] = true; }
 
 };
 
@@ -338,8 +389,15 @@ int main(){
   i.setInstructions(Parser::parseInstructions());
 
   while(i.executeNextCycle()){
+    cout << "INSTRUÇÃO EXECUTADA: " << i.lastExecutedInstruction << endl;
+    cout << "VALORES DE MEMÓRIA MODIFICADOS:"  << endl;
+    cout << "=============================" << endl;
     i.printMemory();
+    cout << "=============================" << endl;
+    cout << "VALORES DE REGISTRADORES MODIFICADOS:"  << endl;
+    cout << "=============================" << endl;
     i.printRegisters();
+    cout << "=============================" << endl;
   }
 
 }
